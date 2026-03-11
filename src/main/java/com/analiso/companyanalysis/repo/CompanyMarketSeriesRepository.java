@@ -8,10 +8,9 @@ import java.time.LocalDate;
 import java.util.List;
 
 public interface CompanyMarketSeriesRepository extends JpaRepository<CompanyMarketSeriesEntity, MarketSeriesId> {
-    List<CompanyMarketSeriesEntity> findByIdTickerAndIdAsOfDateAndIdMetricInOrderByIdMetricAscIdBucketIndexAsc(
-        String ticker,
+    List<CompanyMarketSeriesEntity> findByIdCdCvmAndIdAsOfDateAndIdMetricInOrderByIdMetricAscIdBucketIndexAsc(
+        Integer cdCvm,
         LocalDate asOfDate,
         List<String> metrics
     );
 }
-

@@ -5,9 +5,14 @@ import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+
 @Entity
 @Table(name = "company_analysis_pillar_evidences", schema = "analiso")
 public class CompanyAnalysisPillarEvidenceEntity {
+    private static final DateTimeFormatter DDMM = DateTimeFormatter.ofPattern("dd/MM");
+
     @EmbeddedId
     private RunPillarOrderId id;
 
@@ -19,6 +24,10 @@ public class CompanyAnalysisPillarEvidenceEntity {
     private String intensity;
     @Column(name = "title")
     private String title;
+    @Column(name = "value_numeric")
+    private Double valueNumeric;
+    @Column(name = "value_unit")
+    private String valueUnit;
     @Column(name = "value_text")
     private String valueText;
     @Column(name = "metric")
@@ -30,7 +39,7 @@ public class CompanyAnalysisPillarEvidenceEntity {
     @Column(name = "source_doc_label")
     private String sourceDocLabel;
     @Column(name = "source_date")
-    private String sourceDate;
+    private LocalDate sourceDate;
     @Column(name = "source_url")
     private String sourceUrl;
 
@@ -39,11 +48,15 @@ public class CompanyAnalysisPillarEvidenceEntity {
     public String getLabel() { return label; }
     public String getIntensity() { return intensity; }
     public String getTitle() { return title; }
+    public Double getValueNumeric() { return valueNumeric; }
+    public String getValueUnit() { return valueUnit; }
     public String getValueText() { return valueText; }
     public String getMetric() { return metric; }
     public String getWhyText() { return whyText; }
     public String getSourceName() { return sourceName; }
     public String getSourceDocLabel() { return sourceDocLabel; }
-    public String getSourceDate() { return sourceDate; }
+    public String getSourceDate() {
+        return sourceDate == null ? null : sourceDate.format(DDMM);
+    }
     public String getSourceUrl() { return sourceUrl; }
 }

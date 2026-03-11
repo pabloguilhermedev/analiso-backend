@@ -5,6 +5,8 @@ import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 
+import java.time.LocalDate;
+
 @Entity
 @Table(name = "company_analysis_timeline_events", schema = "analiso")
 public class CompanyAnalysisTimelineEventEntityV2 {
@@ -12,7 +14,7 @@ public class CompanyAnalysisTimelineEventEntityV2 {
     private RunOrderId id;
 
     @Column(name = "event_date")
-    private String eventDate;
+    private LocalDate eventDate;
     @Column(name = "title")
     private String title;
     @Column(name = "source")
@@ -23,7 +25,9 @@ public class CompanyAnalysisTimelineEventEntityV2 {
     private String expectedImpact;
 
     public RunOrderId getId() { return id; }
-    public String getEventDate() { return eventDate; }
+    public String getEventDate() {
+        return eventDate == null ? null : eventDate.toString();
+    }
     public String getTitle() { return title; }
     public String getSource() { return source; }
     public String getWhyText() { return whyText; }

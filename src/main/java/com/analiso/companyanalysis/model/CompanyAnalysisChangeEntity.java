@@ -5,6 +5,8 @@ import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
 
+import java.time.LocalDate;
+
 @Entity
 @Table(name = "company_analysis_changes", schema = "analiso")
 public class CompanyAnalysisChangeEntity {
@@ -14,7 +16,7 @@ public class CompanyAnalysisChangeEntity {
     @Column(name = "change_type")
     private String changeType;
     @Column(name = "change_date")
-    private String changeDate;
+    private LocalDate changeDate;
     @Column(name = "severity")
     private String severity;
     @Column(name = "impact")
@@ -34,7 +36,10 @@ public class CompanyAnalysisChangeEntity {
 
     public RunOrderId getId() { return id; }
     public String getChangeType() { return changeType; }
-    public String getChangeDate() { return changeDate; }
+    public String getChangeDate() {
+        return changeDate == null ? null : changeDate.toString();
+    }
+    public LocalDate getChangeDateValue() { return changeDate; }
     public String getSeverity() { return severity; }
     public String getImpact() { return impact; }
     public String getTitle() { return title; }

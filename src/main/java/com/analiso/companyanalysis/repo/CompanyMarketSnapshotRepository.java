@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Optional;
 
 public interface CompanyMarketSnapshotRepository extends JpaRepository<CompanyMarketSnapshotEntity, MarketSnapshotId> {
-    Optional<CompanyMarketSnapshotEntity> findTopByIdTickerAndIdMetricOrderByIdAsOfDateDesc(String ticker, String metric);
-    List<CompanyMarketSnapshotEntity> findByIdTickerAndIdAsOfDateAndIdMetricIn(String ticker, LocalDate asOfDate, List<String> metrics);
+    Optional<CompanyMarketSnapshotEntity> findTopByIdCdCvmAndIdMetricOrderByIdAsOfDateDesc(Integer cdCvm, String metric);
+    List<CompanyMarketSnapshotEntity> findByIdCdCvmAndIdAsOfDateAndIdMetricIn(Integer cdCvm, LocalDate asOfDate, List<String> metrics);
 }
-

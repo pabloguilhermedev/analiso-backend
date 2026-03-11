@@ -5,9 +5,14 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeFormatter;
+
 @Entity
 @Table(name = "company_analysis_overview", schema = "analiso")
 public class CompanyAnalysisOverviewEntity {
+    private static final DateTimeFormatter DDMM = DateTimeFormatter.ofPattern("dd/MM");
+
     @Id
     @Column(name = "run_id")
     private Long runId;
@@ -51,7 +56,7 @@ public class CompanyAnalysisOverviewEntity {
     @Column(name = "summary_text")
     private String summaryText;
     @Column(name = "summary_updated_at")
-    private String summaryUpdatedAt;
+    private OffsetDateTime summaryUpdatedAt;
     @Column(name = "summary_source")
     private String summarySource;
 
@@ -75,7 +80,8 @@ public class CompanyAnalysisOverviewEntity {
     public String getSummaryMonitorPillar() { return summaryMonitorPillar; }
     public String getSummaryMonitorText() { return summaryMonitorText; }
     public String getSummaryText() { return summaryText; }
-    public String getSummaryUpdatedAt() { return summaryUpdatedAt; }
+    public String getSummaryUpdatedAt() {
+        return summaryUpdatedAt == null ? null : summaryUpdatedAt.format(DDMM);
+    }
     public String getSummarySource() { return summarySource; }
 }
-

@@ -9,8 +9,8 @@ import java.util.Objects;
 
 @Embeddable
 public class MarketSeriesId implements Serializable {
-    @Column(name = "ticker")
-    private String ticker;
+    @Column(name = "cd_cvm")
+    private Integer cdCvm;
     @Column(name = "as_of_date")
     private LocalDate asOfDate;
     @Column(name = "metric")
@@ -20,7 +20,7 @@ public class MarketSeriesId implements Serializable {
 
     public MarketSeriesId() {}
 
-    public String getTicker() { return ticker; }
+    public Integer getCdCvm() { return cdCvm; }
     public LocalDate getAsOfDate() { return asOfDate; }
     public String getMetric() { return metric; }
     public Integer getBucketIndex() { return bucketIndex; }
@@ -29,12 +29,11 @@ public class MarketSeriesId implements Serializable {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (!(o instanceof MarketSeriesId that)) return false;
-        return Objects.equals(ticker, that.ticker) && Objects.equals(asOfDate, that.asOfDate) && Objects.equals(metric, that.metric) && Objects.equals(bucketIndex, that.bucketIndex);
+        return Objects.equals(cdCvm, that.cdCvm) && Objects.equals(asOfDate, that.asOfDate) && Objects.equals(metric, that.metric) && Objects.equals(bucketIndex, that.bucketIndex);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(ticker, asOfDate, metric, bucketIndex);
+        return Objects.hash(cdCvm, asOfDate, metric, bucketIndex);
     }
 }
-

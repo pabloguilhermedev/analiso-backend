@@ -14,8 +14,10 @@ public class CompanyTickerEntity {
 
     @Column(name = "primary_ticker")
     private String primaryTicker;
+    @Column(name = "company_name")
+    private String companyName;
 
     public Integer getCdCvm() { return cdCvm; }
     public String getPrimaryTicker() { return primaryTicker; }
+    public String getCompanyName() { return companyName; }
 }
-

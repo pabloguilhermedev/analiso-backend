@@ -1,4 +1,4 @@
-﻿package com.analiso.companyanalysis;
+package com.analiso.companyanalysis;
 
 import com.analiso.companyanalysis.model.*;
 import com.analiso.companyanalysis.repo.*;
@@ -7,6 +7,8 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.text.Normalizer;
+import java.time.LocalDate;
+import java.time.format.DateTimeParseException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -20,7 +22,8 @@ import static java.util.Map.entry;
 public class CompanyAnalysisService {
 
     private static final int DEFAULT_SCORE = 50;
-    private static final List<String> PILLAR_ORDER = List.of("Divida", "Caixa", "Margens", "Retorno", "Proventos");
+    private static final List<Integer> CHANGE_WINDOWS = List.of(30, 60, 90);
+    private static final List<String> PILLAR_ORDER = List.of("Divida", "Caixa", "Margens", "Retorno", "Proventos", "Valuation", "Negocio");
     private static final List<String> PRICE_METRICS = List.of("P/L", "EV/EBITDA", "P/VP");
     private static final Map<String, Object> EMPTY_SERIES = Map.of(
         "labels", List.of(),
@@ -33,6 +36,8 @@ public class CompanyAnalysisService {
         entry("dvida", "Divida"),
         entry("debt", "Divida"),
         entry("div", "Divida"),
+        entry("growth", "Retorno"),
+        entry("profitability", "Margens"),
         entry("caixa", "Caixa"),
         entry("cash", "Caixa"),
         entry("margens", "Margens"),
@@ -43,7 +48,12 @@ public class CompanyAnalysisService {
         entry("proventos", "Proventos"),
         entry("provento", "Proventos"),
         entry("shareholder", "Proventos"),
-        entry("shareholders", "Proventos")
+        entry("shareholders", "Proventos"),
+        entry("dividends", "Proventos"),
+        entry("valuation", "Valuation"),
+        entry("business", "Negocio"),
+        entry("negocio", "Negocio"),
+        entry("negcios", "Negocio")
     );
 
     private final CompanyTickerRepository tickerRepo;
@@ -175,6 +185,8 @@ public class CompanyAnalysisService {
         response.put("summaryMeta", summaryMeta);
         response.put("pillars", pillars);
         response.put("changes", changes);
+        response.put("changesSummary", buildChangesSummary(changes));
+        response.put("changesSummaryByWindow", buildChangesSummaryByWindow(changes));
         response.put("timelineEvents", timelineEvents);
         response.put("priceData", priceData);
         response.put("sourceRows", sourceRows);
@@ -254,8 +266,10 @@ public class CompanyAnalysisService {
                 return evidence;
             }).toList();
 
-            List<CompanyAnalysisPillarChartPointEntity> chart5 = chartByPillarWindow.getOrDefault(pillarName + "|5a", List.of());
-            List<CompanyAnalysisPillarChartPointEntity> chart10 = chartByPillarWindow.getOrDefault(pillarName + "|10a", List.of());
+            List<CompanyAnalysisPillarChartPointEntity> chart5 = chartByPillarWindow.getOrDefault(pillarName + "|5y", List.of());
+            List<CompanyAnalysisPillarChartPointEntity> chart10 = chartByPillarWindow.getOrDefault(pillarName + "|10y", List.of());
+            if (chart5.isEmpty()) chart5 = chartByPillarWindow.getOrDefault(pillarName + "|5a", List.of());
+            if (chart10.isEmpty()) chart10 = chartByPillarWindow.getOrDefault(pillarName + "|10a", List.of());
             if (chart5.isEmpty() && !chart10.isEmpty()) chart5 = takeLast(chart10, 5);
             if (chart10.isEmpty() && !chart5.isEmpty()) chart10 = chart5;
 
@@ -296,6 +310,12 @@ public class CompanyAnalysisService {
 
     private List<Map<String, Object>> buildChanges(String ticker, Long runId) {
         return changeRepo.findByIdRunIdOrderByIdOrderIndexAsc(runId).stream().map(row -> {
+            String rawImpact = textOrEmpty(row.getImpact(), "A classificar");
+            String impact = normalizePillarName(rawImpact);
+            if (impact.isBlank()) impact = "A classificar";
+            String type = normalizeChangeType(row.getChangeType());
+            String title = textOrEmpty(row.getTitle(), "Evento");
+
             Map<String, Object> source = new LinkedHashMap<>();
             source.put("docLabel", textOrNull(row.getSourceDocLabel()));
             source.put("url", textOrNull(row.getSourceUrl()));
@@ -303,11 +323,11 @@ public class CompanyAnalysisService {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("companyId", ticker);
             item.put("ticker", ticker);
-            item.put("type", textOrEmpty(row.getChangeType(), "Evento"));
+            item.put("type", type);
             item.put("date", textOrNull(row.getChangeDate()));
-            item.put("severity", textOrEmpty(row.getSeverity(), "Leve"));
-            item.put("impact", textOrEmpty(row.getImpact(), "A classificar"));
-            item.put("title", textOrEmpty(row.getTitle(), "Evento"));
+            item.put("severity", textOrEmpty(row.getSeverity(), "medium"));
+            item.put("impact", impact);
+            item.put("title", title);
             item.put("impactLine", textOrEmpty(row.getImpactLine()));
             item.put("unchangedLine", textOrEmpty(row.getUnchangedLine()));
             item.put("source", source);
@@ -337,6 +357,131 @@ public class CompanyAnalysisService {
             item.put("pillars", pillars);
             return item;
         }).toList();
+    }
+
+    private Map<String, Object> buildChangesSummary(List<Map<String, Object>> changes) {
+        return buildWindowSummary(changes, 90);
+    }
+
+    private Map<String, Object> buildChangesSummaryByWindow(List<Map<String, Object>> changes) {
+        Map<String, Object> byWindow = new LinkedHashMap<>();
+        for (int windowDays : CHANGE_WINDOWS) {
+            byWindow.put(String.valueOf(windowDays), buildWindowSummary(changes, windowDays));
+        }
+        return byWindow;
+    }
+
+    private Map<String, Object> buildWindowSummary(List<Map<String, Object>> changes, int windowDays) {
+        LocalDate now = LocalDate.now();
+        LocalDate cutoff = now.minusDays(windowDays);
+
+        List<Map<String, Object>> inWindow = new ArrayList<>();
+        for (Map<String, Object> change : changes) {
+            LocalDate changeDate = tryParseDate(Objects.toString(change.get("date"), ""));
+            if (changeDate == null || changeDate.isBefore(cutoff) || changeDate.isAfter(now)) continue;
+            inWindow.add(change);
+        }
+
+        int structuralCount = 0;
+        int relevantCount = 0;
+        int routineCount = 0;
+        Map<String, Integer> pillarHits = new HashMap<>();
+
+        for (Map<String, Object> change : inWindow) {
+            String type = normalizeChangeType(Objects.toString(change.get("type"), ""));
+            if (type.equals("Estrutural")) structuralCount++;
+            else if (type.equals("Relevante")) relevantCount++;
+            else routineCount++;
+
+            String pillar = normalizePillarName(Objects.toString(change.get("impact"), ""));
+            if (!pillar.isBlank() && !pillar.equalsIgnoreCase("A classificar")) {
+                pillarHits.merge(pillar, 1, Integer::sum);
+            }
+        }
+
+        String mostAffectedPillar = pillarHits.entrySet().stream()
+            .max(Map.Entry.comparingByValue())
+            .map(Map.Entry::getKey)
+            .orElse("A classificar");
+
+        Map<String, Object> principalChange = pickPrincipalChange(inWindow);
+        String principalTitle = Objects.toString(principalChange.get("title"), "nenhum gatilho dominante");
+        String principalPillar = Objects.toString(principalChange.get("impact"), mostAffectedPillar);
+        String periodSummary = buildPeriodSummaryText(windowDays, principalTitle, principalPillar, structuralCount, relevantCount, routineCount);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("windowDays", windowDays);
+        out.put("summaryText", periodSummary);
+        out.put("mostAffectedPillar", mostAffectedPillar);
+        out.put("structuralCount", structuralCount);
+        out.put("relevantCount", relevantCount);
+        out.put("routineCount", routineCount);
+        out.put("principalChange", principalChange);
+        return out;
+    }
+
+    private Map<String, Object> pickPrincipalChange(List<Map<String, Object>> changes) {
+        Map<String, Object> best = changes.stream()
+            .max(Comparator.comparingInt(this::changePriority).thenComparing(this::changeDateValue, Comparator.nullsLast(LocalDate::compareTo)))
+            .orElse(null);
+
+        if (best == null) {
+            return Map.of(
+                "title", "",
+                "type", "Rotina",
+                "impact", "A classificar",
+                "whyItMatters", ""
+            );
+        }
+
+        String title = textOrEmpty(Objects.toString(best.get("title"), ""), "Evento");
+        String impact = textOrEmpty(Objects.toString(best.get("impact"), ""), "A classificar");
+        String type = normalizeChangeType(Objects.toString(best.get("type"), ""));
+        return Map.of(
+            "title", title,
+            "type", type,
+            "impact", impact,
+            "whyItMatters", textOrEmpty(Objects.toString(best.get("impactLine"), ""))
+        );
+    }
+
+    private int changePriority(Map<String, Object> change) {
+        String type = normalizeChangeType(Objects.toString(change.get("type"), ""));
+        if (type.equals("Estrutural")) return 3;
+        if (type.equals("Relevante")) return 2;
+        return 1;
+    }
+
+    private LocalDate changeDateValue(Map<String, Object> change) {
+        return tryParseDate(Objects.toString(change.get("date"), ""));
+    }
+
+    private String buildPeriodSummaryText(
+        int windowDays,
+        String principalTitle,
+        String principalPillar,
+        int structuralCount,
+        int relevantCount,
+        int routineCount
+    ) {
+        String periodTone;
+        if (structuralCount > 0) {
+            periodTone = "mudancas com potencial estrutural";
+        } else if (relevantCount > 0) {
+            periodTone = "mudancas relevantes de acompanhamento";
+        } else if (routineCount > 0) {
+            periodTone = "atualizacoes de rotina";
+        } else {
+            periodTone = "poucos gatilhos materiais";
+        }
+        return String.format(
+            Locale.ROOT,
+            "Nos ultimos %d dias, a principal mudanca identificada foi %s, com possivel efeito em %s. Fora isso, o periodo teve %s, sem alteracao estrutural dominante na leitura geral da empresa.",
+            windowDays,
+            principalTitle,
+            principalPillar,
+            periodTone
+        );
     }
 
     private Map<String, Object> buildPriceData(String ticker, Long runId) {
@@ -416,7 +561,7 @@ public class CompanyAnalysisService {
             item.put("source", textOrEmpty(s.getSource(), "CVM"));
             item.put("doc", textOrEmpty(s.getDoc(), "Documento"));
             item.put("date", textOrNull(s.getDateText()));
-            item.put("status", textOrEmpty(s.getStatus(), "Antigo"));
+            item.put("status", textOrEmpty(s.getStatus(), "unknown"));
             item.put("link", textOrNull(s.getLink()));
             return item;
         }).toList();
@@ -516,6 +661,14 @@ public class CompanyAnalysisService {
         return PILLAR_ALIASES.getOrDefault(key, value);
     }
 
+    private String normalizeChangeType(String rawType) {
+        String typeKey = normalizeAliasKey(rawType);
+        if (typeKey.contains("estrutural")) return "Estrutural";
+        if (typeKey.contains("relevante")) return "Relevante";
+        if (typeKey.contains("rotina")) return "Rotina";
+        return "Rotina";
+    }
+
     private int indexByFlag(List<CompanyAnalysisPriceDistributionEntity> values, boolean expected) {
         for (int i = 0; i < values.size(); i++) {
             if (Objects.equals(values.get(i).getIsCurrent(), expected)) return i;
@@ -563,6 +716,16 @@ public class CompanyAnalysisService {
 
     private String normalizeTicker(String value) {
         return value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private LocalDate tryParseDate(String value) {
+        String text = textOrEmpty(value);
+        if (text.isBlank()) return null;
+        try {
+            return LocalDate.parse(text);
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
     }
 
     private List<Map<String, Object>> dedupeSourceRows(List<Map<String, Object>> rows) {

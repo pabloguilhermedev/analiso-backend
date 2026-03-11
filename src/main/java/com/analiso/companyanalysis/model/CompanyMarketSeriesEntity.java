@@ -11,6 +11,8 @@ public class CompanyMarketSeriesEntity {
     @EmbeddedId
     private MarketSeriesId id;
 
+    @Column(name = "ticker")
+    private String ticker;
     @Column(name = "label")
     private String label;
     @Column(name = "value")
@@ -21,9 +23,9 @@ public class CompanyMarketSeriesEntity {
     private Boolean isMedian;
 
     public MarketSeriesId getId() { return id; }
+    public String getTicker() { return ticker; }
     public String getLabel() { return label; }
     public Double getValue() { return value; }
     public Boolean getIsCurrent() { return isCurrent; }
     public Boolean getIsMedian() { return isMedian; }
 }
-
