@@ -6,6 +6,7 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
+import java.math.BigDecimal;
 import java.text.Normalizer;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -81,8 +82,12 @@ public class CompanyAnalysisService {
     private final CompanyAnalysisTimelineEventRepositoryV2 timelineEventRepo;
     private final CompanyAnalysisTimelineEventPillarRepository timelineEventPillarRepo;
     private final CompanyAnalysisPriceContextRepository priceContextRepo;
-    private final CompanyAnalysisPriceMetricRepository priceMetricRepo;
-    private final CompanyAnalysisPriceDistributionRepository priceDistributionRepo;
+    private final CompanyAnalysisPriceCardsRepository priceCardsRepo;
+    private final CompanyAnalysisPriceChartRepository priceChartRepo;
+    private final CompanyAnalysisPriceRangeRepository priceRangeRepo;
+    private final CompanyAnalysisPriceScenarioRepository priceScenarioRepo;
+    private final CompanyAnalysisPriceSensitivityRepository priceSensitivityRepo;
+    private final CompanyAnalysisPriceSensitivityDriverRepository priceSensitivityDriverRepo;
     private final CompanyAnalysisSourceRepository sourceRepo;
 
     public CompanyAnalysisService(
@@ -97,8 +102,12 @@ public class CompanyAnalysisService {
         CompanyAnalysisTimelineEventRepositoryV2 timelineEventRepo,
         CompanyAnalysisTimelineEventPillarRepository timelineEventPillarRepo,
         CompanyAnalysisPriceContextRepository priceContextRepo,
-        CompanyAnalysisPriceMetricRepository priceMetricRepo,
-        CompanyAnalysisPriceDistributionRepository priceDistributionRepo,
+        CompanyAnalysisPriceCardsRepository priceCardsRepo,
+        CompanyAnalysisPriceChartRepository priceChartRepo,
+        CompanyAnalysisPriceRangeRepository priceRangeRepo,
+        CompanyAnalysisPriceScenarioRepository priceScenarioRepo,
+        CompanyAnalysisPriceSensitivityRepository priceSensitivityRepo,
+        CompanyAnalysisPriceSensitivityDriverRepository priceSensitivityDriverRepo,
         CompanyAnalysisSourceRepository sourceRepo
     ) {
         this.tickerRepo = tickerRepo;
@@ -112,8 +121,12 @@ public class CompanyAnalysisService {
         this.timelineEventRepo = timelineEventRepo;
         this.timelineEventPillarRepo = timelineEventPillarRepo;
         this.priceContextRepo = priceContextRepo;
-        this.priceMetricRepo = priceMetricRepo;
-        this.priceDistributionRepo = priceDistributionRepo;
+        this.priceCardsRepo = priceCardsRepo;
+        this.priceChartRepo = priceChartRepo;
+        this.priceRangeRepo = priceRangeRepo;
+        this.priceScenarioRepo = priceScenarioRepo;
+        this.priceSensitivityRepo = priceSensitivityRepo;
+        this.priceSensitivityDriverRepo = priceSensitivityDriverRepo;
         this.sourceRepo = sourceRepo;
     }
 
@@ -141,7 +154,7 @@ public class CompanyAnalysisService {
         List<Map<String, Object>> pillars;
         List<Map<String, Object>> changes;
         List<Map<String, Object>> timelineEvents;
-        Map<String, Object> priceData;
+        Map<String, Object> fairValueAnalysis;
         List<Map<String, Object>> sourceRows;
 
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -157,8 +170,8 @@ public class CompanyAnalysisService {
                 CompletableFuture.supplyAsync(() -> buildChanges(ticker, runId), executor);
             CompletableFuture<List<Map<String, Object>>> timelineFuture =
                 CompletableFuture.supplyAsync(() -> buildTimelineEvents(ticker, runId), executor);
-            CompletableFuture<Map<String, Object>> priceDataFuture =
-                CompletableFuture.supplyAsync(() -> buildPriceData(ticker, runId), executor);
+            CompletableFuture<Map<String, Object>> fairValueAnalysisFuture =
+                CompletableFuture.supplyAsync(() -> buildFairValueAnalysis(runId), executor);
             CompletableFuture<List<Map<String, Object>>> sourceRowsFuture =
                 CompletableFuture.supplyAsync(() -> buildSourceRows(ticker, runId), executor);
 
@@ -169,7 +182,7 @@ public class CompanyAnalysisService {
                 pillarsFuture,
                 changesFuture,
                 timelineFuture,
-                priceDataFuture,
+                fairValueAnalysisFuture,
                 sourceRowsFuture
             ).join();
 
@@ -179,7 +192,7 @@ public class CompanyAnalysisService {
             pillars = pillarsFuture.join();
             changes = changesFuture.join();
             timelineEvents = timelineFuture.join();
-            priceData = priceDataFuture.join();
+            fairValueAnalysis = fairValueAnalysisFuture.join();
             sourceRows = sourceRowsFuture.join();
         }
 
@@ -194,7 +207,7 @@ public class CompanyAnalysisService {
         response.put("pillars", buildPillarsBlock(pillars));
         response.put("changes", buildChangesBlock(ticker, changes));
         response.put("agenda", buildAgendaBlock(timelineEvents));
-        response.put("price", buildPriceBlock(priceData));
+        response.put("fairValueAnalysis", fairValueAnalysis);
         response.put("sources", buildSourcesBlock(sourceRows));
         return sanitizeMap(response);
     }
@@ -524,72 +537,123 @@ public class CompanyAnalysisService {
         );
     }
 
-    private Map<String, Object> buildPriceData(String ticker, Long runId) {
+    private Map<String, Object> buildFairValueAnalysis(Long runId) {
         CompanyAnalysisPriceContextEntity context = priceContextRepo.findById(runId).orElse(null);
+        CompanyAnalysisPriceCardsEntity cards = priceCardsRepo.findById(runId).orElse(null);
+        CompanyAnalysisPriceChartEntity chart = priceChartRepo.findById(runId).orElse(null);
+        CompanyAnalysisPriceSensitivityEntity sensitivity = priceSensitivityRepo.findById(runId).orElse(null);
 
-        List<CompanyAnalysisPriceMetricEntity> metricRowsRaw = priceMetricRepo.findByIdRunIdOrderByIdOrderIndexAsc(runId);
-        Map<String, CompanyAnalysisPriceMetricEntity> metricByName = new LinkedHashMap<>();
-        for (CompanyAnalysisPriceMetricEntity row : metricRowsRaw) {
-            metricByName.putIfAbsent(textOrEmpty(row.getId().getMetric()), row);
-        }
+        Map<String, CompanyAnalysisPriceRangeEntity> rangeByKey = priceRangeRepo.findByIdRunId(runId).stream()
+            .collect(Collectors.toMap(r -> textOrEmpty(r.getId().getScenarioKey()), Function.identity(), (left, right) -> left));
 
-        List<Map<String, Object>> rows = new ArrayList<>();
-        for (String metric : PRICE_METRICS) {
-            CompanyAnalysisPriceMetricEntity row = metricByName.get(metric);
-            if (row == null) continue;
-            Map<String, Object> item = new LinkedHashMap<>();
-            item.put("companyId", ticker);
-            item.put("ticker", ticker);
-            item.put("metric", metric);
-            item.put("current", textOrEmpty(row.getCurrentText(), "-"));
-            item.put("sector", textOrEmpty(row.getSectorText(), "-"));
-            item.put("historical", textOrEmpty(row.getHistoricalText(), "-"));
-            item.put("insight", textOrEmpty(row.getInsight(), "Sem referencia historica suficiente."));
-            rows.add(item);
-        }
+        List<Map<String, Object>> scenarios = priceScenarioRepo.findByIdRunIdOrderByOrderIndexAsc(runId).stream()
+            .map(s -> {
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("key", textOrEmpty(s.getId().getScenarioKey()));
+                row.put("label", textOrEmpty(s.getLabel()));
+                row.put("estimatedValue", s.getEstimatedValue());
+                row.put("displayEstimatedValue", textOrEmpty(s.getDisplayEstimatedValue()));
+                row.put("gapVsCurrentPct", s.getGapVsCurrentPct());
+                row.put("displayGapVsCurrent", textOrEmpty(s.getDisplayGapVsCurrent()));
+                row.put("reading", textOrEmpty(s.getReading()));
+                return row;
+            }).toList();
 
-        Map<String, List<CompanyAnalysisPriceDistributionEntity>> distByMetric = new LinkedHashMap<>();
-        for (CompanyAnalysisPriceDistributionEntity row : priceDistributionRepo.findByIdRunIdOrderByIdMetricAscIdBucketIndexAsc(runId)) {
-            distByMetric.computeIfAbsent(textOrEmpty(row.getId().getMetric()), k -> new ArrayList<>()).add(row);
-        }
-
-        Map<String, Map<String, Object>> metricSeries = new LinkedHashMap<>();
-        for (Map.Entry<String, List<CompanyAnalysisPriceDistributionEntity>> entry : distByMetric.entrySet()) {
-            List<CompanyAnalysisPriceDistributionEntity> values = entry.getValue();
-            List<String> labels = values.stream().map(v -> textOrEmpty(v.getLabel())).toList();
-            List<Double> points = values.stream().map(v -> v.getValue() == null ? 0.0 : v.getValue()).toList();
-
-            int currentMarker = firstDefined(values.stream().map(CompanyAnalysisPriceDistributionEntity::getCurrentMarker).toList(), indexByFlag(values, true));
-            int medianMarker = firstDefined(values.stream().map(CompanyAnalysisPriceDistributionEntity::getMedianMarker).toList(), indexByMedian(values, true));
-
-            Map<String, Object> series = new LinkedHashMap<>();
-            series.put("labels", labels);
-            series.put("values", points);
-            series.put("currentMarker", Math.max(currentMarker, 0));
-            series.put("medianMarker", Math.max(medianMarker, 0));
-            metricSeries.put(entry.getKey(), series);
-        }
-
-        Map<String, Object> selected = PRICE_METRICS.stream()
-            .map(metricSeries::get)
-            .filter(Objects::nonNull)
-            .findFirst()
-            .orElse(EMPTY_SERIES);
+        List<Map<String, Object>> drivers = priceSensitivityDriverRepo.findByIdRunIdOrderByOrderIndexAsc(runId).stream()
+            .map(d -> {
+                String driverKey = normalizeDriverKey(
+                    textOrEmpty(d.getId().getDriverKey())
+                );
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("key", driverKey);
+                row.put("label", textOrEmpty(d.getLabel()));
+                row.put("impact", textOrEmpty(d.getImpact()));
+                return row;
+            }).toList();
 
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("companyId", ticker);
-        out.put("ticker", ticker);
-        out.put("current", textOrEmpty(context == null ? null : context.getCurrentPriceText(), "-"));
-        out.put("summary", textOrEmpty(context == null ? null : context.getSummary(), rows.isEmpty() ? "Sem dados de valuation para o periodo atual." : String.valueOf(rows.get(0).get("insight"))));
-        out.put("labels", selected.get("labels"));
-        out.put("values", selected.get("values"));
-        out.put("currentMarker", selected.get("currentMarker"));
-        out.put("medianMarker", selected.get("medianMarker"));
-        out.put("rows", rows);
-        out.put("source", textOrEmpty(context == null ? null : context.getSource(), "B3"));
-        out.put("updatedAt", textOrNull(context == null ? null : context.getUpdatedAtText()));
-        out.put("metricSeries", metricSeries);
+        out.put("availability", textOrEmpty(context == null ? null : context.getAvailability(), "unavailable"));
+        out.put("state", textOrEmpty(context == null ? null : context.getStateKey(), "unknown"));
+        out.put("label", textOrEmpty(context == null ? null : context.getStateLabel(), "Desconhecido"));
+        out.put("headline", textOrEmpty(context == null ? null : context.getHeadline()));
+        out.put("summary", textOrEmpty(context == null ? null : context.getSummary()));
+        out.put("meaning", textOrEmpty(context == null ? null : context.getMeaning()));
+        out.put("whyItMatters", textOrEmpty(context == null ? null : context.getWhyItMatters()));
+        out.put("takeaway", textOrEmpty(context == null ? null : context.getTakeaway()));
+        out.put("meta", Map.of(
+            "model", textOrEmpty(context == null ? null : context.getModel(), "DCF"),
+            "currency", textOrEmpty(context == null ? null : context.getCurrency(), "BRL"),
+            "updatedAt", textOrEmpty(context == null ? null : context.getUpdatedAtText()),
+            "source", textOrEmpty(context == null ? null : context.getSource(), "ANALISO_DERIVED"),
+            "disclaimer", textOrEmpty(context == null ? null : context.getDisclaimer())
+        ));
+        Map<String, Object> cardsBlock = new LinkedHashMap<>();
+        Map<String, Object> currentPriceCard = new LinkedHashMap<>();
+        currentPriceCard.put("label", "Preco atual");
+        currentPriceCard.put("value", cards == null ? null : cards.getCurrentPriceValue());
+        currentPriceCard.put("displayValue", textOrEmpty(cards == null ? null : cards.getCurrentPriceDisplay()));
+        cardsBlock.put("currentPrice", currentPriceCard);
+
+        Map<String, Object> fairValueCard = new LinkedHashMap<>();
+        fairValueCard.put("label", "Preco justo estimado");
+        fairValueCard.put("value", cards == null ? null : cards.getFairValueValue());
+        fairValueCard.put("displayValue", textOrEmpty(cards == null ? null : cards.getFairValueDisplay()));
+        cardsBlock.put("fairValue", fairValueCard);
+
+        Map<String, Object> gapCard = new LinkedHashMap<>();
+        gapCard.put("label", "Diferenca vs. preco atual");
+        gapCard.put("valuePct", cards == null ? null : cards.getGapValuePct());
+        gapCard.put("displayValue", textOrEmpty(cards == null ? null : cards.getGapDisplay()));
+        cardsBlock.put("gap", gapCard);
+        out.put("cards", cardsBlock);
+
+        Map<String, Object> ranges = new LinkedHashMap<>();
+        ranges.put("conservative", toRangeBlock(rangeByKey.get("conservative"), false));
+        ranges.put("base", toRangeBlock(rangeByKey.get("base"), true));
+        ranges.put("optimistic", toRangeBlock(rangeByKey.get("optimistic"), false));
+        Map<String, Object> currentPriceChart = new LinkedHashMap<>();
+        currentPriceChart.put("value", chart == null ? null : chart.getCurrentPriceValue());
+        currentPriceChart.put("displayValue", textOrEmpty(chart == null ? null : chart.getCurrentPriceDisplay()));
+
+        Map<String, Object> chartBlock = new LinkedHashMap<>();
+        chartBlock.put("type", textOrEmpty(chart == null ? null : chart.getChartType(), "fair_value_range_bar"));
+        chartBlock.put("title", textOrEmpty(chart == null ? null : chart.getTitle()));
+        chartBlock.put("subtitle", textOrEmpty(chart == null ? null : chart.getSubtitle()));
+        chartBlock.put("currentPrice", currentPriceChart);
+        chartBlock.put("ranges", ranges);
+        out.put("chart", chartBlock);
+        out.put("scenarios", scenarios);
+        out.put("sensitivity", Map.of(
+            "title", textOrEmpty(sensitivity == null ? null : sensitivity.getTitle()),
+            "summary", textOrEmpty(
+                context == null ? null : context.getSensitivityNote(),
+                sensitivity == null ? null : sensitivity.getSummary()
+            ),
+            "drivers", drivers
+        ));
         return out;
+    }
+
+    private Map<String, Object> toRangeBlock(CompanyAnalysisPriceRangeEntity range, boolean includeFairValue) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("min", range == null ? null : range.getMinValue());
+        out.put("max", range == null ? null : range.getMaxValue());
+        out.put("displayMin", textOrEmpty(range == null ? null : range.getDisplayMin()));
+        out.put("displayMax", textOrEmpty(range == null ? null : range.getDisplayMax()));
+        if (includeFairValue) {
+            out.put("fairValue", range == null ? null : range.getFairValue());
+            out.put("displayFairValue", textOrEmpty(range == null ? null : range.getDisplayFairValue()));
+        }
+        return out;
+    }
+
+    private String normalizeDriverKey(String keyRaw) {
+        String key = normalizeAliasKey(keyRaw);
+        if ("wacc".equals(key)) return "WACC";
+        if ("operatingmargin".equals(key)) return "Margem operacional";
+        if ("terminalgrowth".equals(key)) return "Crescimento terminal";
+        if ("reinvestment".equals(key)) return "Reinvestimento / Capex";
+        return textOrEmpty(keyRaw);
     }
 
     private List<Map<String, Object>> buildSourceRows(String ticker, Long runId) {
