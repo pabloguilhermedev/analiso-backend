@@ -24,6 +24,12 @@ public class CompanyAnalysisPillarEntity {
     private String trend;
     @Column(name = "summary")
     private String summary;
+    @Column(name = "how_to_read")
+    private String howToRead;
+    @Column(name = "cta_subtitle")
+    private String ctaSubtitle;
+    @Column(name = "cta_title")
+    private String ctaTitle;
     @Column(name = "trust_source")
     private String trustSource;
     @Column(name = "trust_updated_at")
@@ -36,6 +42,9 @@ public class CompanyAnalysisPillarEntity {
     public Integer getScore() { return score; }
     public String getTrend() { return trend; }
     public String getSummary() { return summary; }
+    public String getHowToRead() { return howToRead; }
+    public String getCtaSubtitle() { return ctaSubtitle; }
+    public String getCtaTitle() { return ctaTitle; }
     public String getTrustSource() { return trustSource; }
     public String getTrustUpdatedAt() {
         return trustUpdatedAt == null ? null : trustUpdatedAt.format(DDMM);

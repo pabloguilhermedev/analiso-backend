@@ -28,6 +28,17 @@ public class CompanyAnalysisService {
     private static final List<Integer> CHANGE_WINDOWS = List.of(30, 60, 90);
     private static final List<String> PILLAR_ORDER = List.of("Divida", "Caixa", "Margens", "Retorno", "Proventos", "Valuation", "Negocio");
     private static final List<String> PRICE_METRICS = List.of("P/L", "EV/EBITDA", "P/VP");
+    private static final Map<String, List<String>> STATUS_KEYWORDS = Map.of(
+        "negative", List.of("negative", "risc"),
+        "attention", List.of("attention", "aten", "monitor"),
+        "positive", List.of("positive", "saud", "fort")
+    );
+    private static final Map<String, String> STATUS_DISPLAY = Map.of(
+        "negative", "Risco",
+        "attention", "Atencao",
+        "positive", "Saudavel",
+        "unknown", "Desconhecido"
+    );
     private static final Map<String, Object> EMPTY_SERIES = Map.of(
         "labels", List.of(),
         "values", List.of(),
@@ -247,6 +258,7 @@ public class CompanyAnalysisService {
 
                 Map<String, Object> evidence = new LinkedHashMap<>();
                 evidence.put("id", textOrEmpty(e.getEvidenceId(), pillarName.toLowerCase(Locale.ROOT) + "-1"));
+                evidence.put("orderIndex", e.getId() == null ? null : e.getId().getOrderIndex());
                 evidence.put("label", textOrEmpty(e.getLabel()));
                 evidence.put("intensity", textOrEmpty(e.getIntensity()));
                 evidence.put("title", textOrEmpty(e.getTitle()));
@@ -268,7 +280,7 @@ public class CompanyAnalysisService {
             List<Double> series10 = chart10.stream().map(v -> v.getValue() == null ? 0.0 : v.getValue()).toList();
             List<String> years5 = chart5.stream().map(v -> textOrEmpty(v.getYearLabel())).toList();
             List<String> years10 = chart10.stream().map(v -> textOrEmpty(v.getYearLabel())).toList();
-            String metricLabel = metricRows.isEmpty() ? "Metrica principal" : textOrEmpty(metricRows.get(0).getLabel(), "Metrica principal");
+            String metricLabel = metricRows.isEmpty() ? "" : textOrEmpty(metricRows.get(0).getLabel());
 
             Map<String, Object> trust = new LinkedHashMap<>();
             trust.put("source", textOrEmpty(pillar == null ? null : pillar.getTrustSource()));
@@ -276,7 +288,7 @@ public class CompanyAnalysisService {
             trust.put("status", textOrEmpty(pillar == null ? null : pillar.getTrustStatus()));
 
             Map<String, Object> chart = new LinkedHashMap<>();
-            chart.put("title", "Evidencia: " + metricLabel);
+            chart.put("title", metricLabel);
             chart.put("series5", series5);
             chart.put("series10", series10);
             chart.put("years5", years5);
@@ -284,17 +296,23 @@ public class CompanyAnalysisService {
 
             Map<String, Object> primarySignal = buildPrimarySignal(evidences);
             List<Map<String, Object>> watchItems = buildWatchItems(evidences);
-            Map<String, Object> explainer = buildExplainer(pillarName, textOrEmpty(pillar == null ? null : pillar.getSummary()));
+            String explainerText = textOrEmpty(
+                pillar == null ? null : pillar.getHowToRead(),
+                textOrEmpty(pillar == null ? null : pillar.getSummary())
+            );
+            Map<String, Object> explainer = buildExplainer(pillarName, explainerText);
 
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("companyId", ticker);
             item.put("ticker", ticker);
             item.put("name", pillarName);
             item.put("displayName", displayPillarName(pillarName));
-            item.put("status", textOrEmpty(pillar == null ? null : pillar.getStatus(), statusFromScore(score)));
+            item.put("status", textOrEmpty(pillar == null ? null : pillar.getStatus()));
             item.put("score", score);
-            item.put("trend", textOrEmpty(pillar == null ? null : pillar.getTrend(), "-> 0 vs periodo anterior"));
-            item.put("summary", textOrEmpty(pillar == null ? null : pillar.getSummary(), "Sem resumo para o pilar."));
+            item.put("trend", textOrEmpty(pillar == null ? null : pillar.getTrend()));
+            item.put("summary", textOrEmpty(pillar == null ? null : pillar.getSummary()));
+            item.put("ctaSubtitle", textOrEmpty(pillar == null ? null : pillar.getCtaSubtitle()));
+            item.put("ctaTitle", textOrEmpty(pillar == null ? null : pillar.getCtaTitle()));
             item.put("trust", trust);
             item.put("chart", chart);
             item.put("metrics", metrics);
@@ -855,6 +873,8 @@ public class CompanyAnalysisService {
         List<Map<String, Object>> watchItems = (List<Map<String, Object>>) pillar.getOrDefault("watchItems", List.of());
         @SuppressWarnings("unchecked")
         Map<String, Object> explainer = (Map<String, Object>) pillar.getOrDefault("explainer", Map.of());
+        String ctaSubtitle = Objects.toString(pillar.get("ctaSubtitle"), "");
+        String ctaTitle = Objects.toString(pillar.get("ctaTitle"), "");
 
         Map<String, Object> baseMetric = metrics.isEmpty() ? Map.of() : metrics.get(0);
         String metricLabel = normalizeMetricLabel(Objects.toString(baseMetric.get("label"), ""));
@@ -916,14 +936,14 @@ public class CompanyAnalysisService {
             .map(item -> textOrEmpty(Objects.toString(item.get("why"), "")))
             .filter(s -> !s.isBlank())
             .findFirst()
-            .orElse(summary);
+            .orElse("");
         out.put("explainer", Map.of("title", "Como ler", "text", textOrEmpty(Objects.toString(explainer.get("text"), ""), summary)));
         out.put("meaning", Map.of("title", "O que isso significa", "text", meaningText));
         out.put("primarySignal", toPrimarySignalBlock(primarySignal, metricLabel));
         out.put("watchItems", toWatchItemsBlock(watchItems));
         out.put("cta", Map.of(
-            "subtitle", "Quer ser avisado se a pressao em " + displayName + " piorar?",
-            "primary", Map.of("label", "Criar alerta para piora em " + displayName, "action", "create_alert", "payload", Map.of("pillar", pillarKey(name), "mode", "worsening"))
+            "subtitle", ctaSubtitle,
+            "primary", Map.of("label", ctaTitle, "action", "create_alert", "payload", Map.of("pillar", pillarKey(name), "mode", "worsening"))
         ));
         out.put("sources", Map.of("main", List.of(toPrimarySourceFromSignal(primarySignal))));
         return out;
@@ -933,7 +953,7 @@ public class CompanyAnalysisService {
         String label = Objects.toString(primarySignal.get("label"), "");
         String intensity = Objects.toString(primarySignal.get("intensity"), "");
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("label", keyDisplay(signalLabelKey(label, intensity), signalLabelDisplay(label, intensity)));
+        out.put("label", keyDisplay(signalLabelKey(label), signalLabelDisplay(label)));
         out.put("intensity", keyDisplay(normalizeEvidenceIntensity(intensity), intensityDisplay(normalizeEvidenceIntensity(intensity))));
         out.put("title", Objects.toString(primarySignal.get("title"), ""));
         out.put("value", Objects.toString(primarySignal.get("value"), ""));
@@ -1154,19 +1174,16 @@ public class CompanyAnalysisService {
     }
 
     private String statusKeyFromRaw(String raw) {
-        String key = normalizeAliasKey(raw);
-        if (key.contains("risc")) return "negative";
-        if (key.contains("aten") || key.contains("monitor")) return "attention";
-        if (key.contains("saud") || key.contains("fort")) return "positive";
-        return "unknown";
+        String normalized = normalizeAliasKey(raw);
+        return STATUS_KEYWORDS.entrySet().stream()
+            .filter(entry -> entry.getValue().stream().anyMatch(normalized::contains))
+            .map(Map.Entry::getKey)
+            .findFirst()
+            .orElse("unknown");
     }
 
     private String statusDisplayFromRaw(String raw) {
-        String key = statusKeyFromRaw(raw);
-        if ("negative".equals(key)) return "Risco";
-        if ("attention".equals(key)) return "Monitorar";
-        if ("positive".equals(key)) return "Saudavel";
-        return "Sem leitura";
+        return STATUS_DISPLAY.getOrDefault(statusKeyFromRaw(raw), "Desconhecido");
     }
 
     private String trendKeyFromRaw(String raw) {
@@ -1249,19 +1266,18 @@ public class CompanyAnalysisService {
     }
 
 
-    private String signalLabelKey(String label, String intensity) {
+    private String signalLabelKey(String label) {
         String l = normalizeAliasKey(label);
-        String i = normalizeAliasKey(intensity);
-        if ((l.contains("fort") || l.contains("suporte")) && !i.contains("high")) return "support_signal";
-        if (i.contains("high")) return "pressure_signal";
-        return "relevant_signal";
+        if (l.contains("suporte")) return "support_signal";
+        if (l.contains("atenc")) return "attention_point";
+        if (l.contains("press")) return "pressure_signal";
+        if (l.contains("semleiturasuficiente")) return "no_reading";
+        return "custom";
     }
 
-    private String signalLabelDisplay(String label, String intensity) {
-        String key = signalLabelKey(label, intensity);
-        if ("support_signal".equals(key)) return "Sinal de suporte";
-        if ("pressure_signal".equals(key)) return "Sinal de press\u00E3o";
-        return "Sinal relevante";
+    private String signalLabelDisplay(String label) {
+        String display = textOrEmpty(label).trim();
+        return display.isBlank() ? "Sem leitura suficiente" : display;
     }
 
     private String intensityDisplay(String intensityKey) {
@@ -1318,9 +1334,12 @@ public class CompanyAnalysisService {
 
     private Map<String, Object> buildPrimarySignal(List<Map<String, Object>> evidences) {
         Map<String, Object> best = evidences.stream()
-            .filter(e -> !isWatchEvidence(e))
+            .filter(this::isStrongestEvidence)
             .findFirst()
-            .orElseGet(() -> evidences.stream().findFirst().orElse(Map.of()));
+            .orElseGet(() -> evidences.stream()
+                .filter(e -> !isWatchEvidence(e))
+                .findFirst()
+                .orElseGet(() -> evidences.stream().findFirst().orElse(Map.of())));
         Object source = best.get("source");
         return new LinkedHashMap<>(Map.of(
             "title", textOrEmpty(Objects.toString(best.get("title"), "")),
@@ -1333,12 +1352,30 @@ public class CompanyAnalysisService {
         ));
     }
 
+    private boolean isStrongestEvidence(Map<String, Object> evidence) {
+        String id = normalizeAliasKey(textOrEmpty(Objects.toString(evidence.get("id"), "")));
+        if (id.contains("-s-")) return true;
+        Integer orderIndex = parseIntSafe(evidence.get("orderIndex"));
+        return orderIndex != null && orderIndex == 0;
+    }
+
+    private Integer parseIntSafe(Object raw) {
+        if (raw == null) return null;
+        if (raw instanceof Number n) return n.intValue();
+        try {
+            return Integer.parseInt(Objects.toString(raw, "").trim());
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
     private List<Map<String, Object>> buildWatchItems(List<Map<String, Object>> evidences) {
         Map<String, Object> primary = evidences.stream()
-            .filter(e -> !isWatchEvidence(e))
+            .filter(this::isStrongestEvidence)
             .findFirst()
             .orElse(null);
-        return evidences.stream()
+
+        List<Map<String, Object>> selected = evidences.stream()
             .filter(e -> e != primary)
             .filter(e -> isWatchEvidence(e) || isWatchByTitle(e))
             .limit(3)
@@ -1348,30 +1385,35 @@ public class CompanyAnalysisService {
                 row.put("why", textOrEmpty(Objects.toString(e.get("why"), "")));
                 row.put("intensity", normalizeEvidenceIntensity(textOrEmpty(Objects.toString(e.get("intensity"), ""))));
                 return row;
-            }).toList();
+            }).collect(Collectors.toCollection(ArrayList::new));
+
+        if (selected.size() < 3) {
+            evidences.stream()
+                .filter(e -> e != primary)
+                .filter(e -> !isWatchEvidence(e) && !isWatchByTitle(e))
+                .limit(3 - selected.size())
+                .forEach(e -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("title", textOrEmpty(Objects.toString(e.get("title"), "")));
+                    row.put("why", textOrEmpty(Objects.toString(e.get("why"), "")));
+                    row.put("intensity", normalizeEvidenceIntensity(textOrEmpty(Objects.toString(e.get("intensity"), ""))));
+                    selected.add(row);
+                });
+        }
+
+        if (selected.size() < 3 && primary != null) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("title", textOrEmpty(Objects.toString(primary.get("title"), "")));
+            row.put("why", textOrEmpty(Objects.toString(primary.get("why"), "")));
+            row.put("intensity", normalizeEvidenceIntensity(textOrEmpty(Objects.toString(primary.get("intensity"), ""))));
+            selected.add(row);
+        }
+
+        return selected.stream().limit(3).toList();
     }
 
     private Map<String, Object> buildExplainer(String pillarName, String fallbackSummary) {
-        String text;
-        switch (normalizePillarName(pillarName)) {
-            case "Caixa" -> text =
-                "Neste pilar, usamos o fluxo de caixa livre para entender a capacidade de financiar execu\u00E7\u00E3o com recursos pr\u00F3prios. " +
-                "Quanto maior e mais est\u00E1vel o FCF, maior tende a ser a folga financeira.";
-            case "Divida" -> text =
-                "Neste pilar, usamos a d\u00EDvida l\u00EDquida e a alavancagem para avaliar a folga financeira da empresa. " +
-                "Quanto menor a press\u00E3o de d\u00EDvida e mais previs\u00EDvel o servi\u00E7o financeiro, maior tende a ser a flexibilidade de execu\u00E7\u00E3o.";
-            case "Margens" -> text =
-                "Neste pilar, usamos a margem l\u00EDquida para entender a convers\u00E3o final de receita em lucro. " +
-                "Quanto maior e mais est\u00E1vel a margem, melhor tende a ser a qualidade da execu\u00E7\u00E3o.";
-            case "Retorno" -> text =
-                "Neste pilar, usamos o ROE para entender quanto retorno a empresa gera sobre o capital pr\u00F3prio. " +
-                "Quanto maior e mais consistente o indicador, melhor tende a ser a efici\u00EAncia na gera\u00E7\u00E3o de resultado.";
-            case "Proventos" -> text =
-                "Neste pilar, usamos payout e distribui\u00E7\u00E3o para avaliar a sustentabilidade dos proventos. " +
-                "Quanto mais equilibrada a distribui\u00E7\u00E3o em rela\u00E7\u00E3o ao lucro e ao caixa, maior tende a ser a previsibilidade.";
-            default -> text = textOrEmpty(fallbackSummary);
-        }
-        return new LinkedHashMap<>(Map.of("text", text));
+        return new LinkedHashMap<>(Map.of("text", textOrEmpty(fallbackSummary)));
     }
 
     private int evidencePriority(Map<String, Object> evidence) {
@@ -1382,8 +1424,11 @@ public class CompanyAnalysisService {
     }
 
     private boolean isWatchEvidence(Map<String, Object> evidence) {
+        String id = normalizeAliasKey(textOrEmpty(Objects.toString(evidence.get("id"), "")));
+        if (id.contains("-a-")) return true;
         String label = textOrEmpty(Objects.toString(evidence.get("label"), "")).toLowerCase(Locale.ROOT);
-        return label.contains("aten");
+        if (label.contains("o que monitorar")) return true;
+        return label.startsWith("watch");
     }
 
     private boolean isWatchByTitle(Map<String, Object> evidence) {
