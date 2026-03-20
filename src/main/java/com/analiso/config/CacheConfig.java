@@ -37,8 +37,18 @@ public class CacheConfig {
                 .build()
         );
 
+        // Watchlist: TTL de 1 hora — mesmo padrão do dashboard.
+        CaffeineCache watchlistCache = new CaffeineCache(
+            "watchlist",
+            Caffeine.newBuilder()
+                .maximumSize(1_000)
+                .expireAfterWrite(1, TimeUnit.HOURS)
+                .recordStats()
+                .build()
+        );
+
         SimpleCacheManager manager = new SimpleCacheManager();
-        manager.setCaches(List.of(analysisCache, dashboardCache));
+        manager.setCaches(List.of(analysisCache, dashboardCache, watchlistCache));
         return manager;
     }
 }

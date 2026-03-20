@@ -1,6 +1,7 @@
 package com.analiso.user.controller;
 
 import com.analiso.auth.dto.AuthenticatedUserResponse;
+import com.analiso.pipeline.PipelineTriggerService;
 import com.analiso.security.AuthenticatedUser;
 import com.analiso.user.dto.AddWatchlistItemRequest;
 import com.analiso.user.dto.AddWatchlistItemsBatchRequest;
@@ -28,15 +29,18 @@ public class UserController {
     private final AuthenticatedUserService authenticatedUserService;
     private final WatchlistService watchlistService;
     private final DashboardPreferencesService dashboardPreferencesService;
+    private final PipelineTriggerService pipelineTriggerService;
 
     public UserController(
         AuthenticatedUserService authenticatedUserService,
         WatchlistService watchlistService,
-        DashboardPreferencesService dashboardPreferencesService
+        DashboardPreferencesService dashboardPreferencesService,
+        PipelineTriggerService pipelineTriggerService
     ) {
         this.authenticatedUserService = authenticatedUserService;
         this.watchlistService = watchlistService;
         this.dashboardPreferencesService = dashboardPreferencesService;
+        this.pipelineTriggerService = pipelineTriggerService;
     }
 
     @GetMapping
@@ -70,6 +74,10 @@ public class UserController {
     ) {
         AddWatchlistItemsBatchResponse response =
             watchlistService.addAll(authenticatedUser.userId(), request.getTickers());
+
+        // Fire-and-forget — dispara a pipeline em background sem bloquear o response
+        pipelineTriggerService.triggerDashboardGeneration(authenticatedUser.userId());
+
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 

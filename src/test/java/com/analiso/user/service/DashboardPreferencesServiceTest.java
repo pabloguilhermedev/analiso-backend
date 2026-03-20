@@ -4,7 +4,6 @@ import com.analiso.user.dto.DashboardPreferencesResponse;
 import com.analiso.user.dto.UpdateDashboardPreferencesRequest;
 import com.analiso.user.model.UserDashboardPreferencesEntity;
 import com.analiso.user.repository.UserDashboardPreferencesRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -12,6 +11,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import tools.jackson.databind.ObjectMapper;
 
 import java.time.OffsetDateTime;
 import java.util.List;
